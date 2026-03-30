@@ -8,6 +8,40 @@ echo   Lingua - AI Language Tutor
 echo ================================================
 echo.
 
+:: Check Python
+python --version >nul 2>&1
+if %errorlevel% neq 0 (
+    echo [ERROR] Python not found in PATH.
+    echo         Please install Python 3.11+ from https://python.org
+    pause
+    exit /b 1
+)
+
+:: Create virtual environment if it doesn't exist
+if not exist ".venv\Scripts\activate.bat" (
+    echo Creating Python virtual environment...
+    python -m venv .venv
+    if %errorlevel% neq 0 (
+        echo [ERROR] Failed to create virtual environment.
+        pause
+        exit /b 1
+    )
+    echo [OK] Virtual environment created.
+    echo.
+    echo Installing Python dependencies...
+    call .venv\Scripts\activate.bat
+    pip install -r requirements.txt
+    if %errorlevel% neq 0 (
+        echo [ERROR] pip install failed. Check requirements.txt and your internet connection.
+        pause
+        exit /b 1
+    )
+    echo [OK] Dependencies installed.
+    echo.
+) else (
+    echo [OK] Virtual environment found.
+)
+
 :: Check if Ollama is running
 echo Checking Ollama...
 curl -s http://localhost:11434/api/tags >nul 2>&1
@@ -19,15 +53,6 @@ if %errorlevel% neq 0 (
     pause
 )
 
-:: Check Python
-python --version >nul 2>&1
-if %errorlevel% neq 0 (
-    echo [ERROR] Python not found in PATH.
-    echo         Please install Python 3.11+ from https://python.org
-    pause
-    exit /b 1
-)
-
 :: Check if .env exists
 if not exist ".env" (
     echo [WARNING] .env file not found. Copying from .env.example...
@@ -36,9 +61,9 @@ if not exist ".env" (
     echo.
 )
 
-:: Start backend in a new window
+:: Start backend in a new window using the venv
 echo Starting backend...
-start "Lingua Backend" cmd /k "cd /d %~dp0 && python -m uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload"
+start "Lingua Backend" cmd /k "cd /d %~dp0 && call .venv\Scripts\activate.bat && python -m uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload"
 
 :: Wait a moment for the backend to start
 timeout /t 3 /nobreak >nul

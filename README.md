@@ -44,11 +44,23 @@ cp .env.example .env
 
 Edit `.env` to set your preferred Ollama model and other settings (defaults work out of the box).
 
-### 3. Install Python dependencies
+### 3. Create a virtual environment and install Python dependencies
 
-```bash
+**Windows:**
+```cmd
+python -m venv .venv
+.venv\Scripts\activate
 pip install -r requirements.txt
 ```
+
+**macOS / Linux:**
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+```
+
+> `start.bat` on Windows will create and activate the venv automatically on first run — you only need to do this manually if you want to run commands directly (e.g. `first_run.py`).
 
 ### 4. Pull the Ollama model
 
@@ -60,6 +72,7 @@ This downloads ~8 GB. See [Model Recommendations](#model-recommendations) for li
 
 ### 5. Install Whisper (speech-to-text)
 
+With the venv activated:
 ```bash
 pip install openai-whisper
 ```
@@ -67,6 +80,8 @@ pip install openai-whisper
 The model weights download automatically on first use (~150 MB for `base`).
 
 ### 6. Install TTS (text-to-speech)
+
+With the venv activated:
 
 **Option A — Kokoro** (recommended, higher quality):
 ```bash
