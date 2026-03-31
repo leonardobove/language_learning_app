@@ -23,6 +23,8 @@ Practice **Spanish, French, German, or Dutch** through natural voice or text con
 - **[Ollama](https://ollama.com/download)** — local LLM inference
 - **Python 3.11+** — backend
 - **Node.js 18+** — frontend build
+- **[ffmpeg](https://ffmpeg.org/download.html)** — required by Whisper to decode audio; must be on your system PATH
+  - Windows quickest install: `winget install ffmpeg` (then restart your terminal)
 - **GPU recommended** — NVIDIA with CUDA or Apple Silicon for fast inference; CPU works but is slow
 
 ---

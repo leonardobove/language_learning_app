@@ -1,4 +1,5 @@
 import io
+import shutil
 import tempfile
 import os
 import logging
@@ -7,6 +8,15 @@ from backend.config import WHISPER_MODEL
 logger = logging.getLogger(__name__)
 
 _whisper_model = None
+
+
+def _check_ffmpeg():
+    if shutil.which("ffmpeg") is None:
+        raise RuntimeError(
+            "ffmpeg not found on PATH. Whisper requires ffmpeg to decode audio. "
+            "Install it from https://ffmpeg.org/download.html and make sure it is "
+            "added to your system PATH, then restart the server."
+        )
 
 
 def load_whisper():
@@ -35,6 +45,8 @@ def transcribe_audio(audio_bytes: bytes, language_hint: str | None = None) -> st
     Transcribe raw audio bytes using Whisper.
     Returns the transcribed text string.
     """
+    _check_ffmpeg()
+
     model = load_whisper()
     if model is None:
         raise RuntimeError(
@@ -49,7 +61,6 @@ def transcribe_audio(audio_bytes: bytes, language_hint: str | None = None) -> st
     try:
         options = {}
         if language_hint:
-            # Map full language name to Whisper language code
             lang_map = {
                 "Spanish": "es",
                 "French": "fr",
@@ -61,5 +72,13 @@ def transcribe_audio(audio_bytes: bytes, language_hint: str | None = None) -> st
 
         result = model.transcribe(tmp_path, **options)
         return result["text"].strip()
+    except Exception as e:
+        if "WinError 2" in str(e) or "cannot find the file" in str(e).lower():
+            raise RuntimeError(
+                "ffmpeg not found. Whisper requires ffmpeg to decode audio. "
+                "Install it from https://ffmpeg.org/download.html and add it to your PATH."
+            ) from e
+        raise
     finally:
-        os.unlink(tmp_path)
+        if os.path.exists(tmp_path):
+            os.unlink(tmp_path)

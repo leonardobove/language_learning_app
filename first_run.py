@@ -98,6 +98,17 @@ async def main():
 
     # ── 5. Whisper check ──────────────────────────────────────────────────────
     section("5. Whisper STT check")
+    import shutil
+    ffmpeg = shutil.which("ffmpeg")
+    if ffmpeg:
+        print(f"  [OK] ffmpeg found: {ffmpeg}")
+    else:
+        print("  [FAIL] ffmpeg not found on PATH.")
+        print("         Whisper requires ffmpeg to decode audio from the browser.")
+        print("         Install it from https://ffmpeg.org/download.html")
+        print("         On Windows: winget install ffmpeg  (then restart terminal)")
+        print()
+
     try:
         import whisper
         model_size = os.environ.get("WHISPER_MODEL", "base")
