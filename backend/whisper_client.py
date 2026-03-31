@@ -70,6 +70,10 @@ def transcribe_audio(audio_bytes: bytes, language_hint: str | None = None) -> st
             }
             options["language"] = lang_map.get(language_hint, None)
 
+        # fp16=False: required on CPU (avoids half-precision errors)
+        # initial_prompt: nudges Whisper to produce properly spaced output
+        options.setdefault("fp16", False)
+        options.setdefault("initial_prompt", "Hello.")
         result = model.transcribe(tmp_path, **options)
         return result["text"].strip()
     except Exception as e:
