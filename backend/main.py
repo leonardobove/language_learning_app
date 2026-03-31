@@ -1,20 +1,18 @@
 import json
 import logging
 from contextlib import asynccontextmanager
-from fastapi import FastAPI, HTTPException, UploadFile, File, Form
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import StreamingResponse, Response
+from fastapi.responses import StreamingResponse
 from typing import AsyncIterator
 
-from backend import db, ollama_client, whisper_client, tts_client, prompts
+from backend import db, nvidia_client, prompts
 from backend.models import (
     CreateUserRequest,
     StartSessionRequest,
     ChatRequest,
-    TTSRequest,
     HealthResponse,
 )
-from backend.config import OLLAMA_MODEL
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -24,13 +22,11 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     logger.info("Initialising database...")
     db.init_db()
-    logger.info("Pre-loading Whisper model...")
-    whisper_client.load_whisper()
     logger.info("Startup complete.")
     yield
 
 
-app = FastAPI(title="Lingua API", version="1.0.0", lifespan=lifespan)
+app = FastAPI(title="Lingua API", version="2.0.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -45,13 +41,8 @@ app.add_middleware(
 
 @app.get("/health", response_model=HealthResponse)
 async def health():
-    connected = await ollama_client.check_health()
-    models = []
-    if connected:
-        try:
-            models = await ollama_client.list_models()
-        except Exception:
-            pass
+    connected = await nvidia_client.check_health()
+    models = await nvidia_client.list_models() if connected else []
     return HealthResponse(
         status="ok" if connected else "degraded",
         ollama_connected=connected,
@@ -64,7 +55,7 @@ async def health():
 @app.get("/api/models")
 async def get_models():
     try:
-        models = await ollama_client.list_models()
+        models = await nvidia_client.list_models()
         return {"models": models}
     except Exception as e:
         raise HTTPException(status_code=503, detail=str(e))
@@ -74,8 +65,7 @@ async def get_models():
 
 @app.post("/api/users", status_code=201)
 async def create_user(req: CreateUserRequest):
-    user = db.create_user(req.name, req.avatar_color)
-    return user
+    return db.create_user(req.name, req.avatar_color)
 
 
 @app.get("/api/users")
@@ -100,8 +90,7 @@ async def start_session(req: StartSessionRequest):
     user = db.get_user(req.user_id)
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
-    session = db.create_session(req.user_id, req.language, req.level)
-    return session
+    return db.create_session(req.user_id, req.language, req.level)
 
 
 @app.get("/api/sessions/{session_id}")
@@ -134,7 +123,7 @@ async def end_session(session_id: int):
     )
 
     try:
-        summary = await ollama_client.generate_summary(summary_prompt)
+        summary = await nvidia_client.generate_summary(summary_prompt)
         db.upsert_memory(session["user_id"], session["language"], summary)
         return {"status": "ended", "summary": summary}
     except Exception as e:
@@ -163,27 +152,22 @@ async def chat(req: ChatRequest):
         memory_summary=memory_summary,
     )
 
-    # Load conversation history
     history = db.get_messages(req.session_id)
-    ollama_messages = [{"role": "system", "content": system_prompt}]
+    messages = [{"role": "system", "content": system_prompt}]
     for msg in history:
-        ollama_messages.append({"role": msg["role"], "content": msg["content"]})
+        messages.append({"role": msg["role"], "content": msg["content"]})
+    messages.append({"role": "user", "content": req.message})
 
-    # Add the new user message
-    ollama_messages.append({"role": "user", "content": req.message})
-
-    # Persist user message
     db.add_message(req.session_id, "user", req.message)
 
     async def event_stream() -> AsyncIterator[str]:
         full_response = []
         try:
-            async for chunk in ollama_client.chat_stream(ollama_messages):
+            async for chunk in nvidia_client.chat_stream(messages):
                 full_response.append(chunk)
                 payload = json.dumps({"type": "chunk", "content": chunk})
                 yield f"data: {payload}\n\n"
 
-            # Persist the full assistant message
             complete_text = "".join(full_response)
             db.add_message(req.session_id, "assistant", complete_text)
 
@@ -202,37 +186,3 @@ async def chat(req: ChatRequest):
             "X-Accel-Buffering": "no",
         },
     )
-
-
-# ── Transcription ─────────────────────────────────────────────────────────────
-
-@app.post("/api/transcribe")
-async def transcribe(
-    audio: UploadFile = File(...),
-    language: str = Form(default="English"),
-):
-    try:
-        audio_bytes = await audio.read()
-        text = whisper_client.transcribe_audio(audio_bytes, language_hint=language)
-        return {"text": text}
-    except RuntimeError as e:
-        raise HTTPException(status_code=503, detail=str(e))
-    except Exception as e:
-        logger.error(f"Transcription error: {e}")
-        raise HTTPException(status_code=500, detail="Transcription failed")
-
-
-# ── TTS ───────────────────────────────────────────────────────────────────────
-
-@app.post("/api/tts")
-async def text_to_speech(req: TTSRequest):
-    try:
-        audio_bytes = tts_client.synthesize_speech(req.text, req.language)
-        return Response(
-            content=audio_bytes,
-            media_type="audio/wav",
-            headers={"Content-Disposition": "inline; filename=speech.wav"},
-        )
-    except Exception as e:
-        logger.error(f"TTS error: {e}")
-        raise HTTPException(status_code=500, detail="TTS failed")

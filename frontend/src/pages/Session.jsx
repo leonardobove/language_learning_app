@@ -5,15 +5,29 @@ import {
   getUser,
   endSession,
   chatStream,
-  transcribeAudio,
-  fetchTTS,
 } from "../api.js";
 import MicButton from "../components/MicButton.jsx";
 import MessageBubble from "../components/MessageBubble.jsx";
-import AudioPlayer from "../components/AudioPlayer.jsx";
 import HistoryPanel from "../components/HistoryPanel.jsx";
 import useVoiceRecorder from "../hooks/useVoiceRecorder.js";
 import useSSE from "../hooks/useSSE.js";
+
+const LANGUAGE_CODES = {
+  Spanish: "es-ES",
+  French: "fr-FR",
+  German: "de-DE",
+  Dutch: "nl-NL",
+  English: "en-US",
+};
+
+function speakText(text, language) {
+  if (!window.speechSynthesis) return;
+  window.speechSynthesis.cancel();
+  const utterance = new SpeechSynthesisUtterance(text);
+  utterance.lang = LANGUAGE_CODES[language] || "en-US";
+  utterance.rate = 0.95;
+  window.speechSynthesis.speak(utterance);
+}
 
 export default function Session() {
   const { sessionId } = useParams();
@@ -23,12 +37,10 @@ export default function Session() {
   const [session, setSession] = useState(null);
   const [user, setUser] = useState(location.state?.user || null);
   const [messages, setMessages] = useState([]);
-  const [streamingMessage, setStreamingMessage] = useState(null); // {content: string}
+  const [streamingMessage, setStreamingMessage] = useState(null);
   const [inputText, setInputText] = useState("");
   const [showInput, setShowInput] = useState(false);
-  const [audioSrc, setAudioSrc] = useState(null);
   const [busy, setBusy] = useState(false);
-  const [transcribing, setTranscribing] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
   const [ending, setEnding] = useState(false);
   const [error, setError] = useState(null);
@@ -62,7 +74,7 @@ export default function Session() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, streamingMessage]);
 
-  // Send a text/transcribed message to the AI
+  // Send a message to the AI
   const sendMessage = useCallback(
     async (text) => {
       if (!text.trim() || busy || !session) return;
@@ -94,7 +106,7 @@ export default function Session() {
             fullContent += chunk;
             setStreamingMessage({ content: fullContent });
           },
-          async (complete) => {
+          (complete) => {
             setStreamingMessage(null);
             const assistantMsg = {
               id: Date.now() + 1,
@@ -104,13 +116,8 @@ export default function Session() {
             };
             setMessages((prev) => [...prev, assistantMsg]);
 
-            // Fetch TTS in background
-            try {
-              const src = await fetchTTS(complete, language);
-              setAudioSrc(src);
-            } catch (e) {
-              console.warn("TTS failed:", e);
-            }
+            // Speak the response using the browser's built-in TTS
+            speakText(complete, language);
 
             setBusy(false);
           },
@@ -129,32 +136,28 @@ export default function Session() {
     [busy, session, sessionId, language, readStream]
   );
 
-  // Voice recorder callback
-  const handleAudioResult = useCallback(
-    async (blob) => {
-      setTranscribing(true);
-      try {
-        const { text } = await transcribeAudio(blob, language);
-        if (text.trim()) {
-          await sendMessage(text);
-        }
-      } catch (e) {
-        setError("Transcription failed: " + e.message);
-      } finally {
-        setTranscribing(false);
-      }
+  // Voice recorder — Web Speech API returns text directly
+  const handleVoiceResult = useCallback(
+    (text) => {
+      if (text.trim()) sendMessage(text);
     },
-    [language, sendMessage]
+    [sendMessage]
   );
 
-  const { recording, toggleRecording } = useVoiceRecorder({
-    onResult: handleAudioResult,
+  const { recording, error: micError, toggleRecording } = useVoiceRecorder({
+    onResult: handleVoiceResult,
     language,
   });
+
+  // Surface microphone errors
+  useEffect(() => {
+    if (micError) setError(micError);
+  }, [micError]);
 
   async function handleEndSession() {
     if (ending) return;
     setEnding(true);
+    window.speechSynthesis?.cancel();
     try {
       await endSession(parseInt(sessionId));
       navigate(`/language/${session.user_id}`, { state: { user } });
@@ -171,9 +174,7 @@ export default function Session() {
     await sendMessage(text);
   }
 
-  const statusText = transcribing
-    ? "Transcribing…"
-    : recording
+  const statusText = recording
     ? "Listening…"
     : busy
     ? "Lingua is thinking…"
@@ -283,10 +284,7 @@ export default function Session() {
       {error && (
         <div className="mx-4 mb-2 px-4 py-2 bg-danger/10 border border-danger/30 rounded-xl text-danger text-xs text-center">
           {error}
-          <button
-            className="ml-2 underline"
-            onClick={() => setError(null)}
-          >
+          <button className="ml-2 underline" onClick={() => setError(null)}>
             Dismiss
           </button>
         </div>
@@ -339,17 +337,14 @@ export default function Session() {
             <MicButton
               recording={recording}
               onClick={toggleRecording}
-              disabled={busy || transcribing}
+              disabled={busy}
             />
 
-            {/* Spacer (visual balance) */}
+            {/* Spacer */}
             <div className="w-10" />
           </div>
         </div>
       </footer>
-
-      {/* Hidden audio player */}
-      <AudioPlayer src={audioSrc} onEnded={() => setAudioSrc(null)} />
 
       {/* History panel */}
       {showHistory && user && (

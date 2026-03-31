@@ -1,0 +1,15 @@
+services:
+  - type: web
+    name: lingua-api
+    runtime: python
+    region: oregon
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn backend.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: NVIDIA_API_KEY
+        sync: false          # set this manually in the Render dashboard
+      - key: NVIDIA_MODEL
+        value: meta/llama-3.3-70b-instruct
+      - key: DB_PATH
+        value: /tmp/lingua.db

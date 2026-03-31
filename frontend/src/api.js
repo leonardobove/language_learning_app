@@ -1,4 +1,7 @@
-const BASE = "/api";
+// In production (Vercel), set VITE_API_BASE to your Render backend URL,
+// e.g. https://lingua-api.onrender.com/api
+// In development, the Vite proxy handles /api → localhost:8000
+const BASE = import.meta.env.VITE_API_BASE || "/api";
 
 async function request(path, options = {}) {
   const res = await fetch(`${BASE}${path}`, options);
