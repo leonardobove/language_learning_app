@@ -23,6 +23,7 @@ export default function ProfilePicker() {
   const [newName, setNewName] = useState("");
   const [selectedColor, setSelectedColor] = useState(AVATAR_COLORS[0]);
   const [creating, setCreating] = useState(false);
+  const [createError, setCreateError] = useState(null);
   const navigate = useNavigate();
 
   useEffect(() => {
@@ -44,13 +45,14 @@ export default function ProfilePicker() {
     e.preventDefault();
     if (!newName.trim()) return;
     setCreating(true);
+    setCreateError(null);
     try {
       await createUser(newName.trim(), selectedColor);
       setNewName("");
       setShowCreate(false);
       await loadUsers();
     } catch (e) {
-      console.error(e);
+      setCreateError(e.message || "Failed to create profile. Check your API URL.");
     } finally {
       setCreating(false);
     }
@@ -171,6 +173,12 @@ export default function ProfilePicker() {
                   {newName ? getInitials(newName) : "?"}
                 </div>
               </div>
+
+              {createError && (
+                <p className="text-xs text-red-400 bg-red-400/10 rounded-lg px-3 py-2">
+                  {createError}
+                </p>
+              )}
 
               <div className="flex gap-3 pt-1">
                 <button
